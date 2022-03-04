@@ -124,12 +124,16 @@ void Initialize()
 	std::vector<float> uvs;
 	std::vector<float> indices;
 
+	std::cout << shapes.size() << std::endl;
+
+
 	// Loop over shapes
 	for (size_t s = 0; s < shapes.size(); s++) {
 		// Loop over faces(polygon)
 		size_t index_offset = 0;
 		for (size_t f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
 			size_t fv = size_t(shapes[s].mesh.num_face_vertices[f]);
+			
 
 			// Loop over vertices in the face.
 			for (size_t v = 0; v < fv; v++) {
@@ -143,9 +147,7 @@ void Initialize()
 				vertices.push_back(vy);
 				vertices.push_back(vz);
 
-				indices.push_back(index_offset + 0);
-				indices.push_back(index_offset + 1);
-				indices.push_back(index_offset + 2);
+				indices.push_back(index_offset + v);
 
 				// Check if `normal_index` is zero or positive. negative = no normal data
 				if (idx.normal_index >= 0) {
@@ -153,9 +155,9 @@ void Initialize()
 					tinyobj::real_t ny = attrib.normals[3 * size_t(idx.normal_index) + 1];
 					tinyobj::real_t nz = attrib.normals[3 * size_t(idx.normal_index) + 2];
 
-					normals.push_back(nx);
-					normals.push_back(ny);
-					normals.push_back(nz);
+					vertices.push_back(nx);
+					vertices.push_back(ny);
+					vertices.push_back(nz);
 				}
 
 				// Check if `texcoord_index` is zero or positive. negative = no texcoord data
@@ -163,8 +165,8 @@ void Initialize()
 					tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
 					tinyobj::real_t ty = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
 
-					uvs.push_back(tx);
-					uvs.push_back(ty);
+					vertices.push_back(tx);
+					vertices.push_back(ty);
 				}
 
 				// Optional: vertex colors
@@ -180,9 +182,16 @@ void Initialize()
 	}
 
 	float* verticesArr = &vertices[0];
-	float* normalsArr = &normals[0];
-	float* uvsArr = &uvs[0];
+	//float* normalsArr = &normals[0];
+	//float* uvsArr = &uvs[0];
 	float* indicesArr = &indices[0];
+
+	/*for (int i = 0; i < vertices.size(); i++)
+	{*/
+		std::cout << verticesArr[ 0] << " " << verticesArr[ 1] << " " << verticesArr[ 2] << std::endl;
+		std::cout << indicesArr[ 0] << " " << indicesArr[ 1] << " " << indicesArr[ 2] << std::endl;
+	/*}*/
+	
 
 	// --- FBO ----
 
@@ -237,23 +246,23 @@ void Initialize()
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dragonIBO);
 	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indicesArr), indicesArr, GL_STATIC_DRAW);
 
-	constexpr int STRIDE = sizeof(Vertex);
+	constexpr int STRIDE = sizeof(float) * 8;
 	// nos positions sont XYZ (3 floats)
 	const int POSITION =
 		glGetAttribLocation(lightShader.GetProgram(), "a_position");
 	glEnableVertexAttribArray(POSITION);
-	glVertexAttribPointer(POSITION, 3, GL_FLOAT, false, 0, verticesArr);
+	glVertexAttribPointer(POSITION, 3, GL_FLOAT, false, STRIDE, &verticesArr[0]);
 	// nos normales sont en 3D aussi (3 floats)
 	const int NORMAL =
 		glGetAttribLocation(lightShader.GetProgram(), "a_normal");
 	glEnableVertexAttribArray(NORMAL);
-	glVertexAttribPointer(NORMAL, 3, GL_FLOAT, false, 0, normalsArr);
+	glVertexAttribPointer(NORMAL, 3, GL_FLOAT, false, STRIDE, &verticesArr[3]);
 
 	// NECESSAIRE POUR LES TEXTURES ---
 	const int UV =
 		glGetAttribLocation(lightShader.GetProgram(), "a_texcoords");
 	glEnableVertexAttribArray(UV);
-	glVertexAttribPointer(UV, 2, GL_FLOAT, false, 0, uvsArr);
+	glVertexAttribPointer(UV, 2, GL_FLOAT, false, STRIDE, &verticesArr[6]);
 
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -360,7 +369,7 @@ void Display(GLFWwindow* window)
 	const float translation[] = {
 		1.f, 0.f, 0.f, 0.f, // 1ere colonne
 		0.f, 1.f, 0.f, 0.f,
-		0.f, 0.f, 1.f, 0.f,
+		0.f, 0.f, 1.f, -200.f,
 		0.f, 0.f, 0.f, 1.f // 4eme colonne
 	};
 	const GLint matTranslationLocation = glGetUniformLocation(

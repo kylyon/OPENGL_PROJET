@@ -28,7 +28,7 @@ void main(void)
 	v_texcoords = a_texcoords;
 	vec4 pos = vec4(a_position, 1.0);
 
-	gl_Position = u_projection * u_translation 
-					* u_rotation * u_scale * pos;
+	gl_Position = /*u_projection * u_translation 
+					* u_rotation * u_scale * */ pos;
 	
 }
