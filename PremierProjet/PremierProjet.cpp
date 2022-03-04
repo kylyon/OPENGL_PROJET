@@ -46,7 +46,7 @@
 
 std::string inputfile = "cornell_box.obj";
 tinyobj::ObjReaderConfig reader_config;
-reader_config.mtl_search_path = "./"; // Path to material files
+//reader_config.mtl_search_path = "./"; // Path to material files
 
 tinyobj::ObjReader reader;
 
