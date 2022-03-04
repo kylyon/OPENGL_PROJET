@@ -32,6 +32,7 @@
 #endif
 
 #include <iostream>
+#include <vector>
 
 #define STB_IMAGE_IMPLEMENTATION
 #include "stb_image.h"
@@ -44,11 +45,7 @@
 #include "tiny_obj_loader.h"
 
 
-std::string inputfile = "cornell_box.obj";
-tinyobj::ObjReaderConfig reader_config;
-//reader_config.mtl_search_path = "./"; // Path to material files
 
-tinyobj::ObjReader reader;
 
 // format des vertex du dragon XY-NXNYNZ-UV
 struct Vertex {
@@ -101,6 +98,12 @@ void Initialize()
 
 	// ----Load Obj ----
 
+	std::string inputfile = "indoor plant_02.obj";
+	tinyobj::ObjReaderConfig reader_config;
+	reader_config.mtl_search_path = "./"; // Path to material files
+
+	tinyobj::ObjReader reader;
+
 	if (!reader.ParseFromFile(inputfile, reader_config)) {
 		if (!reader.Error().empty()) {
 			std::cerr << "TinyObjReader: " << reader.Error();
@@ -115,6 +118,11 @@ void Initialize()
 	auto& attrib = reader.GetAttrib();
 	auto& shapes = reader.GetShapes();
 	auto& materials = reader.GetMaterials();
+
+	std::vector<float> vertices;
+	std::vector<float> normals;
+	std::vector<float> uvs;
+	std::vector<float> indices;
 
 	// Loop over shapes
 	for (size_t s = 0; s < shapes.size(); s++) {
@@ -131,17 +139,32 @@ void Initialize()
 				tinyobj::real_t vy = attrib.vertices[3 * size_t(idx.vertex_index) + 1];
 				tinyobj::real_t vz = attrib.vertices[3 * size_t(idx.vertex_index) + 2];
 
+				vertices.push_back(vx);
+				vertices.push_back(vy);
+				vertices.push_back(vz);
+
+				indices.push_back(index_offset + 0);
+				indices.push_back(index_offset + 1);
+				indices.push_back(index_offset + 2);
+
 				// Check if `normal_index` is zero or positive. negative = no normal data
 				if (idx.normal_index >= 0) {
 					tinyobj::real_t nx = attrib.normals[3 * size_t(idx.normal_index) + 0];
 					tinyobj::real_t ny = attrib.normals[3 * size_t(idx.normal_index) + 1];
 					tinyobj::real_t nz = attrib.normals[3 * size_t(idx.normal_index) + 2];
+
+					normals.push_back(nx);
+					normals.push_back(ny);
+					normals.push_back(nz);
 				}
 
 				// Check if `texcoord_index` is zero or positive. negative = no texcoord data
 				if (idx.texcoord_index >= 0) {
 					tinyobj::real_t tx = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
 					tinyobj::real_t ty = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+
+					uvs.push_back(tx);
+					uvs.push_back(ty);
 				}
 
 				// Optional: vertex colors
@@ -155,6 +178,11 @@ void Initialize()
 			shapes[s].mesh.material_ids[f];
 		}
 	}
+
+	float* verticesArr = &vertices[0];
+	float* normalsArr = &normals[0];
+	float* uvsArr = &uvs[0];
+	float* indicesArr = &indices[0];
 
 	// --- FBO ----
 
@@ -203,29 +231,29 @@ void Initialize()
 	// ainsi que tous les appels glVertexAttribPointer(), glEnable/disableVertexAttribArray
 	glGenBuffers(1, &dragonVBO);
 	glBindBuffer(GL_ARRAY_BUFFER, dragonVBO);
-	glBufferData(GL_ARRAY_BUFFER, sizeof(DragonVertices), DragonVertices, GL_STATIC_DRAW);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesArr), verticesArr, GL_STATIC_DRAW);
 
 	glGenBuffers(1, &dragonIBO);
 	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dragonIBO);
-	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(DragonIndices), DragonIndices, GL_STATIC_DRAW);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(indicesArr), indicesArr, GL_STATIC_DRAW);
 
 	constexpr int STRIDE = sizeof(Vertex);
 	// nos positions sont XYZ (3 floats)
 	const int POSITION =
 		glGetAttribLocation(lightShader.GetProgram(), "a_position");
 	glEnableVertexAttribArray(POSITION);
-	glVertexAttribPointer(POSITION, 3, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, position));
+	glVertexAttribPointer(POSITION, 3, GL_FLOAT, false, 0, verticesArr);
 	// nos normales sont en 3D aussi (3 floats)
 	const int NORMAL =
 		glGetAttribLocation(lightShader.GetProgram(), "a_normal");
 	glEnableVertexAttribArray(NORMAL);
-	glVertexAttribPointer(NORMAL, 3, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, normal));
+	glVertexAttribPointer(NORMAL, 3, GL_FLOAT, false, 0, normalsArr);
 
 	// NECESSAIRE POUR LES TEXTURES ---
 	const int UV =
 		glGetAttribLocation(lightShader.GetProgram(), "a_texcoords");
 	glEnableVertexAttribArray(UV);
-	glVertexAttribPointer(UV, 2, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, uv));
+	glVertexAttribPointer(UV, 2, GL_FLOAT, false, 0, uvsArr);
 
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -294,9 +322,9 @@ void Display(GLFWwindow* window)
 	// MATRICE DE SCALE
 	//
 	const float scale[] = {
-		10.f, 0.f, 0.f, 0.f, // 1ere colonne
-		0.f, 10.f, 0.f, 0.f,
-		0.f, 0.f, 10.f, 0.f,
+		1.f, 0.f, 0.f, 0.f, // 1ere colonne
+		0.f, 1.f, 0.f, 0.f,
+		0.f, 0.f, 1.f, 0.f,
 		0.f, 0.f, 0.f, 1.f // 4eme colonne
 	};
 	const GLint matScaleLocation = glGetUniformLocation(
@@ -333,7 +361,7 @@ void Display(GLFWwindow* window)
 		1.f, 0.f, 0.f, 0.f, // 1ere colonne
 		0.f, 1.f, 0.f, 0.f,
 		0.f, 0.f, 1.f, 0.f,
-		0.f, 0.f, -200.f, 1.f // 4eme colonne
+		0.f, 0.f, 0.f, 1.f // 4eme colonne
 	};
 	const GLint matTranslationLocation = glGetUniformLocation(
 		lightShader.GetProgram(),
