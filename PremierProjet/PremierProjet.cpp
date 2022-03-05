@@ -59,6 +59,7 @@ struct Vertex {
 
 // ou bien std::uint32_t 
 GLuint dragonVAO;	// la structure d'attributs stockee en VRAM
+GLuint skyboxVAO;	// la structure d'attributs stockee en VRAM
 GLuint dragonVBO;	// les vertices de l'objet stockees en VRAM
 GLuint dragonIBO;	// les indices de l'objet stockees en VRAM
 GLuint texID;
@@ -68,12 +69,53 @@ GLuint texID;
 
 GLShader lightShader;
 GLShader copyShader;
+GLShader skyboxShader;
+
+
+unsigned int cubemapTexture;
 
 // identifiant du Framebuffer Object
 GLuint FBO;
 GLuint ColorBufferFBO; // stocke les couleurs du rendu hors ecran
 GLuint DepthBufferFBO; // stocke les Z du rendu hors ecran
 
+//Position souris initiale
+double xO, yO;
+float rotaX, rotaY = 0;
+bool isClicked = false;
+
+
+unsigned int loadCubemap(std::vector<std::string> faces)
+{
+	unsigned int textureID;
+	glGenTextures(1, &textureID);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, textureID);
+
+	int width, height, nrChannels;
+	for (unsigned int i = 0; i < faces.size(); i++)
+	{
+		unsigned char* data = stbi_load(faces[i].c_str(), &width, &height, &nrChannels, 0);
+		if (data)
+		{
+			glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i,
+				0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, data
+			);
+			stbi_image_free(data);
+		}
+		else
+		{
+			std::cout << "Cubemap tex failed to load at path: " << faces[i] << std::endl;
+			stbi_image_free(data);
+		}
+	}
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+
+	return textureID;
+}
 
 void Initialize()
 {
@@ -94,6 +136,73 @@ void Initialize()
 	copyShader.LoadVertexShader("postprocess.vs");
 	copyShader.LoadFragmentShader("postprocess.fs");
 	copyShader.Create();
+
+	skyboxShader.LoadVertexShader("skybox.vs");
+	skyboxShader.LoadFragmentShader("skybox.fs");
+	skyboxShader.Create();
+
+	// Skybox
+
+	std::vector<std::string> faces;
+	{
+			"skybox/right.jpg",
+			"skybox/left.jpg",
+			"skybox/top.jpg",
+			"skybox/bottom.jpg",
+			"skybox/front.jpg",
+			"skybox/back.jpg";
+	};
+	cubemapTexture = loadCubemap(faces);
+
+	float skyboxVertices[] = {
+		// positions          
+		-1.0f,  1.0f, -1.0f,
+		-1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f, -1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+
+		-1.0f, -1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f,
+		-1.0f, -1.0f,  1.0f,
+
+		-1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f, -1.0f,
+		 1.0f,  1.0f,  1.0f,
+		 1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f,  1.0f,
+		-1.0f,  1.0f, -1.0f,
+
+		-1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f, -1.0f,
+		 1.0f, -1.0f, -1.0f,
+		-1.0f, -1.0f,  1.0f,
+		 1.0f, -1.0f,  1.0f
+	};
+
+	const int SKYBOX_POS =
+		glGetAttribLocation(skyboxShader.GetProgram(), "aPos");
+	glEnableVertexAttribArray(SKYBOX_POS);
+	glVertexAttribPointer(SKYBOX_POS, 3, GL_FLOAT, false, 0, &skyboxVertices[0]);
 
 
 	// ----Load Obj ----
@@ -238,7 +347,9 @@ void Initialize()
 	// enregistres dans le VAO 
 	// ca inclus glBindBuffer(GL_ARRAY_BUFFER/GL_ELEMENT_ARRAY_BUFFER..)
 	// ainsi que tous les appels glVertexAttribPointer(), glEnable/disableVertexAttribArray
-	glGenBuffers(1, &dragonVBO);
+	
+	 //---------------------------------VBO TLO----------------------------------------------------------------
+	/*glGenBuffers(1, &dragonVBO);
 	glBindBuffer(GL_ARRAY_BUFFER, dragonVBO);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(verticesArr), verticesArr, GL_STATIC_DRAW);
 
@@ -262,7 +373,36 @@ void Initialize()
 	const int UV =
 		glGetAttribLocation(lightShader.GetProgram(), "a_texcoords");
 	glEnableVertexAttribArray(UV);
-	glVertexAttribPointer(UV, 2, GL_FLOAT, false, STRIDE, &verticesArr[6]);
+	glVertexAttribPointer(UV, 2, GL_FLOAT, false, STRIDE, &verticesArr[6]);*/
+	//----------------------------------------------------------------------------------------------------------------
+
+	//---------------------------------VBO Dragon----------------------------------------------------------------
+	glGenBuffers(1, &dragonVBO);
+	glBindBuffer(GL_ARRAY_BUFFER, dragonVBO);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(DragonVertices), DragonVertices, GL_STATIC_DRAW);
+
+	glGenBuffers(1, &dragonIBO);
+	glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, dragonIBO);
+	glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(DragonIndices), DragonIndices, GL_STATIC_DRAW);
+
+	constexpr int STRIDE = sizeof(Vertex);
+	// nos positions sont XYZ (3 floats)
+	const int POSITION =
+		glGetAttribLocation(lightShader.GetProgram(), "a_position");
+	glEnableVertexAttribArray(POSITION);
+	glVertexAttribPointer(POSITION, 3, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, position));
+	// nos normales sont en 3D aussi (3 floats)
+	const int NORMAL =
+		glGetAttribLocation(lightShader.GetProgram(), "a_normal");
+	glEnableVertexAttribArray(NORMAL);
+	glVertexAttribPointer(NORMAL, 3, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, normal));
+
+	// NECESSAIRE POUR LES TEXTURES ---
+	const int UV =
+		glGetAttribLocation(lightShader.GetProgram(), "a_texcoords");
+	glEnableVertexAttribArray(UV);
+	glVertexAttribPointer(UV, 2, GL_FLOAT, false, STRIDE, (void*)offsetof(Vertex, uv));
+	//-------------------------------------------------------------------------------------------------------
 
 	glBindVertexArray(0);
 	glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -296,6 +436,51 @@ void Display(GLFWwindow* window)
 
 	glBindFramebuffer(GL_FRAMEBUFFER, FBO);
 	glViewport(0, 0, offscreenWidth, offscreenHeight);
+	
+	glDepthMask(GL_FALSE);
+	glUseProgram(skyboxShader.GetProgram());
+
+	const float rot[] = {
+	1.f, 0.f, 0.f, 0.f, // 1ere colonne
+	0.f, 1.f, 0.f, 0.f,
+	0.f, 0.f, 1.f, 0.f,
+	0.f, 0.f, 0.f, 1.f // 4eme colonne
+	};
+	const GLint matRotLocationYSky = glGetUniformLocation(
+		skyboxShader.GetProgram(),
+		"view"
+	);
+	glUniformMatrix4fv(matRotLocationYSky, 1, false, rot);
+
+	//
+	// MATRICE DE PROJECTION
+	//
+	const float aspectRatio = float(offscreenWidth) / float(offscreenHeight);
+	constexpr float nearZ = 0.01f;
+	constexpr float farZ = 1000.f;
+	constexpr float fov = 45.f;
+	constexpr float fov_rad = fov * 3.141592654f / 180.f;
+	const float f = 1.f / tanf(fov_rad / 2.f);
+	const float projectionPerspective[] = {
+		f / aspectRatio, 0.f, 0.f, 0.f, // 1ere colonne
+		0.f, f, 0.f, 0.f,
+		0.f, 0.f, -(farZ + nearZ) / (farZ - nearZ), -1.f,
+		0.f, 0.f, -(2.f * farZ * nearZ) / (farZ - nearZ), 0.f // 4eme colonne
+	};
+
+	const GLint matProjectionLocationSky = glGetUniformLocation(
+		skyboxShader.GetProgram(),
+		"projection"
+	);
+	glUniformMatrix4fv(matProjectionLocationSky, 1, false, projectionPerspective);
+
+	glBindVertexArray(skyboxVAO);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_CUBE_MAP, cubemapTexture);
+	glDrawArrays(GL_TRIANGLES, 0, 36);
+	glBindVertexArray(0);
+
+	
 
 	// attention le depth mask doit etre active avant d'ecrire (ou clear) le depth buffer
 	glDepthMask(GL_TRUE);
@@ -311,6 +496,7 @@ void Display(GLFWwindow* window)
 	glEnable(GL_CULL_FACE);
 
 	glUseProgram(lightShader.GetProgram());
+	
 
 	// ----
 	glActiveTexture(GL_TEXTURE0); // on la bind sur la texture unit #0
@@ -331,9 +517,9 @@ void Display(GLFWwindow* window)
 	// MATRICE DE SCALE
 	//
 	const float scale[] = {
-		1.f, 0.f, 0.f, 0.f, // 1ere colonne
-		0.f, 1.f, 0.f, 0.f,
-		0.f, 0.f, 1.f, 0.f,
+		10.f, 0.f, 0.f, 0.f, // 1ere colonne
+		0.f, 10.f, 0.f, 0.f,
+		0.f, 0.f, 10.f, 0.f,
 		0.f, 0.f, 0.f, 1.f // 4eme colonne
 	};
 	const GLint matScaleLocation = glGetUniformLocation(
@@ -345,23 +531,43 @@ void Display(GLFWwindow* window)
 	//
 	// MATRICE DE ROTATION
 	//
-	const float rot[] = {
-	1.f, 0.f, 0.f, 0.f, // 1ere colonne
-	0.f, 1.f, 0.f, 0.f,
-	0.f, 0.f, 1.f, 0.f,
-	0.f, 0.f, 0.f, 1.f // 4eme colonne
-	};
+	
 	const float rotY[] = {
-		cosf(time), 0.f,	-sinf(time), 0.f, // 1ere colonne
+		cosf(rotaX), 0.f,	-sinf(rotaX), 0.f, // 1ere colonne
 		0.f,		1.f,	0.f,		0.f,
-		sinf(time),	 0.f, cosf(time),	0.f,
+		sinf(rotaX),	 0.f, cosf(rotaX),	0.f,
 		0.f,		0.f,		0.f,	1.f // 4eme colonne
 	};
-	const GLint matRotLocation = glGetUniformLocation(
+	const GLint matRotLocationY = glGetUniformLocation(
 		lightShader.GetProgram(),
-		"u_rotation"
+		"u_rotation_y"
 	);
-	glUniformMatrix4fv(matRotLocation, 1, false, rotY);
+	glUniformMatrix4fv(matRotLocationY, 1, false, rotY);
+
+	const float rotX[] = {
+		1.f,		 0.f,		  0.f,  0.f, // 1ere colonne
+		0.f, cosf(rotaY),-sinf(rotaY),	0.f,
+		0.f, sinf(rotaY), cosf(rotaY),	0.f,
+		0.f,	     0.f,  	   	  0.f,	1.f // 4eme colonne
+	};
+	const GLint matRotLocationX = glGetUniformLocation(
+		lightShader.GetProgram(),
+		"u_rotation_x"
+	);
+	glUniformMatrix4fv(matRotLocationX, 1, false, rotX);
+
+	
+	/*const float rotZ[] = {
+		cosf(rotaY) * sinf(rotaX),	    -sinf(rotaY) * sinf(rotaX),	     0.f,   0.f, // 1ere colonne
+		sinf(rotaY) * sinf(rotaX),		 cosf(rotaY) * sinf(rotaX),		 0.f,	0.f,
+							  0.f,							   0.f,		 1.f,	0.f,
+							  0.f,  						   0.f,		 0.f,	1.f // 4eme colonne
+	};
+	const GLint matRotLocationZ = glGetUniformLocation(
+		lightShader.GetProgram(),
+		"u_rotation_z"
+	);
+	glUniformMatrix4fv(matRotLocationZ, 1, false, rotZ);*/
 
 	//
 	// MATRICE DE TRANSLATION
@@ -369,8 +575,8 @@ void Display(GLFWwindow* window)
 	const float translation[] = {
 		1.f, 0.f, 0.f, 0.f, // 1ere colonne
 		0.f, 1.f, 0.f, 0.f,
-		0.f, 0.f, 1.f, -200.f,
-		0.f, 0.f, 0.f, 1.f // 4eme colonne
+		0.f, 0.f, 1.f, 0.f,
+		0.f, -50.f, -200.f, 1.f // 4eme colonne
 	};
 	const GLint matTranslationLocation = glGetUniformLocation(
 		lightShader.GetProgram(),
@@ -378,21 +584,7 @@ void Display(GLFWwindow* window)
 	);
 	glUniformMatrix4fv(matTranslationLocation, 1, false, translation);
 
-	//
-	// MATRICE DE PROJECTION
-	//
-	const float aspectRatio = float(offscreenWidth) / float(offscreenHeight);
-	constexpr float nearZ = 0.01f;
-	constexpr float farZ = 1000.f;
-	constexpr float fov = 45.f;
-	constexpr float fov_rad = fov * 3.141592654f / 180.f;
-	const float f = 1.f / tanf(fov_rad / 2.f);
-	const float projectionPerspective[] = {
-		f / aspectRatio, 0.f, 0.f, 0.f, // 1ere colonne
-		0.f, f, 0.f, 0.f,
-		0.f, 0.f, -(farZ + nearZ) / (farZ - nearZ), -1.f,
-		0.f, 0.f, -(2.f * farZ * nearZ) / (farZ - nearZ), 0.f // 4eme colonne
-	};
+	
 	const GLint matProjectionLocation = glGetUniformLocation(
 		lightShader.GetProgram(),
 		"u_projection"
@@ -452,6 +644,38 @@ static void key_callback(GLFWwindow* window, int key, int scancode, int action, 
 		glfwSetWindowShouldClose(window, GLFW_TRUE);
 }
 
+void mouse_button_callback(GLFWwindow* window, int button, int action, int mods)
+{
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_PRESS)
+	{
+		isClicked = true;
+		glfwGetCursorPos(window, &xO, &yO);
+		std::cout << xO << ", " << yO << std::endl;
+
+		// [...]
+	}
+
+	if (button == GLFW_MOUSE_BUTTON_LEFT && action == GLFW_RELEASE)
+	{
+		isClicked = false;
+
+	}
+}
+
+void cursor_position_callback(GLFWwindow* window, double xpos, double ypos)
+{
+	if (isClicked)
+	{
+		double dirX = ( xpos - xO ) * 0.001;
+		double dirY = ( ypos - yO ) * 0.001;
+
+		rotaX += dirX;
+		rotaY += dirY;
+
+		std::cout << sinf(rotaX) << ", " << cosf(rotaX) << std::endl;
+	}
+}
+
 // voir https://www.glfw.org/documentation.html
 // et https://www.glfw.org/docs/latest/quick.html
 int main(void)
@@ -477,6 +701,12 @@ int main(void)
 
 	// defini la fonction de rappel utilisee lors de l'appui d'une touche
 	glfwSetKeyCallback(window, key_callback);
+
+	// Clique souris GLFW Callback
+	glfwSetMouseButtonCallback(window, mouse_button_callback);
+
+	//Position souris
+	glfwSetCursorPosCallback(window, cursor_position_callback);
 
 	// toutes nos initialisations vont ici
 	Initialize();

@@ -12,7 +12,9 @@ varying vec3 v_normal;
 uniform float u_time;
 
 uniform mat4 u_scale;
-uniform mat4 u_rotation;
+uniform mat4 u_rotation_x;
+uniform mat4 u_rotation_y;
+//uniform mat4 u_rotation_z;
 uniform mat4 u_translation;
 uniform mat4 u_projection;
 
@@ -23,12 +25,12 @@ void main(void)
 	// (et si possible eviter le scale egalement)
 	// autrement il faudrait faire ceci:
 	// transpose ( inverse ( mat3(worldMatrix) ) )
-	v_normal = mat3(u_rotation) * a_normal;
+	v_normal = mat3(u_rotation_x * u_rotation_y) * a_normal;
 
 	v_texcoords = a_texcoords;
 	vec4 pos = vec4(a_position, 1.0);
 
-	gl_Position = /*u_projection * u_translation 
-					* u_rotation * u_scale * */ pos;
+	gl_Position = u_projection * u_translation 
+					* u_rotation_y * u_rotation_x * u_scale *  pos;
 	
 }
